@@ -32,19 +32,16 @@ namespace FileParser
         {
             using (StreamReader sr = file.OpenText())
             {
-
                 while (!sr.EndOfStream)
                 {
                     Paragraph p = new Paragraph();
                     string text = sr.ReadLine();
-
-                    if (text.Contains(word))
                     {
                         textArr = text.Split(' ');
                         foreach (var w in textArr)
                         {
                             string nWord = w + " ";
-                            if(isUniqueWord)
+                            if (isUniqueWord)
                             {
                                 if (w == word)
                                 {
@@ -66,11 +63,8 @@ namespace FileParser
                                     p.Inlines.Add(new Run(nWord));
                                 }
                             }
-                            
+
                         }
-                    }
-                    else
-                    {
                         p.Inlines.Add(new Run(text));
                     }
                     rtbText.Document.Blocks.Add(p);

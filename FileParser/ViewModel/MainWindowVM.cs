@@ -17,6 +17,10 @@ namespace FileParser.ViewModel
 {
     public class MainWindowVM : ViewModelBase
     {
+        #region Properties and Constructor
+        private int allfilesCount = 0;
+        private Logger logger;
+        private FilesParser filesParser;
         private int filesCount;
         private readonly Dispatcher dispatcher;
         private ObservableCollection<FileExtension> extensions = new ObservableCollection<FileExtension>();
@@ -125,18 +129,28 @@ namespace FileParser.ViewModel
 
         public MainWindowVM()
         {
+            logger = new Logger();
+            filesParser = new FilesParser(logger);
+
             IsEnabled = true;
             dispatcher = Dispatcher.CurrentDispatcher;
             FillExtensions();
             ExtensionText = ".";
-           // filePath = @"D:\bootstrap-4.1.3";
+
+            //test
+            filePath = @"D:\test parser";
+            searchWord = "Hello";
+            var ext = extensions.FirstOrDefault(e => e.Extension.Contains("txt"));
+            ext.IsChecked = true;
         }
 
         private void FillExtensions()
         {
             Extensions.Clear();
-            Extensions = new ObservableCollection<FileExtension>(FilesParser.ReadExtensions());
+            Extensions = new ObservableCollection<FileExtension>(ExtensionHelper.ReadExtensions());
         }
+        #endregion
+
         #region Save New Extension
         private ICommand saveExtensionCommand;
         public ICommand SaveExtensionCommand
@@ -163,10 +177,11 @@ namespace FileParser.ViewModel
                 FileExtension extension = new FileExtension(ExtensionText);
                 try
                 {
-                    FilesParser.AddNewExtension(extension);
+                    ExtensionHelper.AddNewExtension(extension);
                 }
                 catch (Exception ex)
                 {
+                    logger.LogMessage(ex.Message);
                     MessageBox.Show(ex.Message);
                 }
 
@@ -194,49 +209,78 @@ namespace FileParser.ViewModel
                 RaisedPropertyChanged("ParseFilesCommand");
             }
         }
+        
         private async void ParseFilesAsync(object obj)
         {
-            IsEnabled = false;
-            Status = "Выполнение операции!";
-            Files.Clear();
-            await Task.Run(() => ParseFiles(new object()));
-            IsEnabled = true;
-            Status = $"Операция завершена! Найдено в: {filesCount} файлах";
-        }
-        private void ParseFiles(object obj)
-        {
-            if (!string.IsNullOrWhiteSpace(FilePath))
+            try
             {
-                if (!string.IsNullOrWhiteSpace(SearchWord))
+                IsEnabled = false;
+                Status = "Выполнение операции!";
+                Files.Clear();
+                await Task.Run(ParseFiles);
+                IsEnabled = true;
+                Status = $"Операция завершена! Найдено в: {filesCount} из {allfilesCount}";
+                logger.LogBuilder();
+            }
+            catch (Exception e)
+            {
+                logger.LogMessage(e.Message);
+                MessageBox.Show(e.Message, "Ошибка");
+            }
+
+        }
+
+        private async Task ParseFiles()
+        {
+            using (new PerformanceTimer(logger, $"ParseFiles"))
+            {
+                if (string.IsNullOrWhiteSpace(FilePath))
                 {
-                    filesCount = 0;
-                    foreach (var ext in Extensions)
+                    MessageBox.Show("Укажите папку для поиска!", "Ошибка");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(SearchWord))
+                {
+                    MessageBox.Show("Введите слово для поиска!", "Ошибка");
+                    return;
+                }
+
+                filesCount = 0;
+
+                var checkedExt = Extensions.Where(e => e.IsChecked).ToList();
+                if (checkedExt != null && checkedExt.Count > 0)
+                {
+
+                    foreach (var ext in checkedExt)
                     {
-                        if (ext.IsChecked)
+                        var filesByExtension = filesParser.GetFilesByTree(FilePath, ext);
+
+                        if (filesByExtension != null)
                         {
-                            var filesByExtension = FilesParser.GetFilesByTree(FilePath, ext);
-                            if (filesByExtension != null)
+                            allfilesCount += filesByExtension.Count;
+                            List<Task> parseTasks = new List<Task>();
+
+                            foreach (var file in filesByExtension)
                             {
-                                foreach (var file in FilesParser.GetParseFiles(filesByExtension, SearchWord, IsUniqueWord))
-                                {
-                                    filesCount++;
-                                    dispatcher.Invoke(new Action(() =>
-                                    {
-                                        Status = $"Выполнение операции! Найдено в {filesCount} файлах";
-                                        Files.Add(file);
-                                    }));
-                                }
+                                parseTasks.Add(Task.Run(() => SearchInFile(file)));
                             }
+                            await Task.WhenAll(parseTasks);
                         }
                     }
                 }
-                else
-                    MessageBox.Show("Введите слово для поиска!", "Ошибка");
-                
             }
-            else
+        }
+
+        private void SearchInFile(FileInfo file)
+        {
+            if (filesParser.IsContaintText(file, searchWord, isUniqueWord))
             {
-                MessageBox.Show("Укажите папку для поиска!", "Ошибка");
+                filesCount++;
+                dispatcher.Invoke(new Action(() =>
+                {
+                    Status = $"Выполнение операции! Найдено в {filesCount} из {allfilesCount}";
+                    Files.Add(file);
+                }));
             }
         }
         #endregion
@@ -262,11 +306,11 @@ namespace FileParser.ViewModel
 
         private void SelectedFileInfo(object obj)
         {
-            if(SelectedFile != null)
+            if (SelectedFile != null)
             {
                 string info = $"Назание файла:  {SelectedFile.Name}\n" +
-                    $"Путь: {SelectedFile.FullName}\n";
-                MessageBox.Show(info,"Информация");
+                    $"Путь: {SelectedFile.FullName }\nРазмер: { SelectedFile.Length / 1024} Кб\n";
+                MessageBox.Show(info, "Информация");
             }
         }
         #endregion
@@ -300,7 +344,7 @@ namespace FileParser.ViewModel
                 {
                     try
                     {
-                        FilesParser.DeleteExtension(SelectedExtension);
+                        ExtensionHelper.DeleteExtension(SelectedExtension);
                         FillExtensions();
                     }
                     catch (Exception e)

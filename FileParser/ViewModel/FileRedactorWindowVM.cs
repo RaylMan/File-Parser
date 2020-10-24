@@ -49,8 +49,8 @@ namespace FileParser.ViewModel
         {
             this.file = file;
             Title = file.FullName;
-            FileText = FilesParser.GetTextFromFile(file);
-            Document = GenarateDocument();
+            //FileText = FilesParser.GetTextFromFile(file);
+           // Document = GenarateDocument();
         }
 
         private FlowDocument GenarateDocument()
@@ -62,6 +62,5 @@ namespace FileParser.ViewModel
             doc.Blocks.Add(p);
             return doc;
         }
-        
     }
 }
