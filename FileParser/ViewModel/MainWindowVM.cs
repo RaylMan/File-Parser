@@ -6,6 +6,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
@@ -21,8 +22,10 @@ namespace FileParser.ViewModel
         private int allfilesCount = 0;
         private Logger logger;
         private FilesParser filesParser;
+        private int checkedFiles;
         private int filesCount;
         private readonly Dispatcher dispatcher;
+        private CancellationTokenSource cts;
         private ObservableCollection<FileExtension> extensions = new ObservableCollection<FileExtension>();
         public ObservableCollection<FileExtension> Extensions
         {
@@ -138,10 +141,10 @@ namespace FileParser.ViewModel
             ExtensionText = ".";
 
             //test
-            filePath = @"D:\test parser";
-            searchWord = "Hello";
-            var ext = extensions.FirstOrDefault(e => e.Extension.Contains("txt"));
-            ext.IsChecked = true;
+            //filePath = @"D:\test parser";
+            //searchWord = "Hello";
+            //var ext = extensions.FirstOrDefault(e => e.Extension.Contains("txt"));
+            //ext.IsChecked = true;
         }
 
         private void FillExtensions()
@@ -209,7 +212,7 @@ namespace FileParser.ViewModel
                 RaisedPropertyChanged("ParseFilesCommand");
             }
         }
-        
+
         private async void ParseFilesAsync(object obj)
         {
             try
@@ -219,19 +222,23 @@ namespace FileParser.ViewModel
                 Files.Clear();
                 await Task.Run(ParseFiles);
                 IsEnabled = true;
-                Status = $"Операция завершена! Найдено в: {filesCount} из {allfilesCount}";
+                Status = $"Операция завершена! Найдено в {filesCount} из {allfilesCount}";
                 logger.LogBuilder();
+            }
+            catch (OperationCanceledException e)
+            {
+                Status = e.Message;
             }
             catch (Exception e)
             {
                 logger.LogMessage(e.Message);
                 MessageBox.Show(e.Message, "Ошибка");
             }
-
         }
 
         private async Task ParseFiles()
         {
+            cts = new CancellationTokenSource();
             using (new PerformanceTimer(logger, $"ParseFiles"))
             {
                 if (string.IsNullOrWhiteSpace(FilePath))
@@ -245,7 +252,9 @@ namespace FileParser.ViewModel
                     return;
                 }
 
+                checkedFiles = 0;
                 filesCount = 0;
+                allfilesCount = 0;
 
                 var checkedExt = Extensions.Where(e => e.IsChecked).ToList();
                 if (checkedExt != null && checkedExt.Count > 0)
@@ -273,14 +282,28 @@ namespace FileParser.ViewModel
 
         private void SearchInFile(FileInfo file)
         {
-            if (filesParser.IsContaintText(file, searchWord, isUniqueWord))
+            try
             {
-                filesCount++;
+                if (filesParser.IsContaintText(file, searchWord, isUniqueWord, cts.Token))
+                {
+                    dispatcher.Invoke(new Action(() =>
+                      {
+                          filesCount++;
+                          Files.Add(file);
+                      }));
+                }
                 dispatcher.Invoke(new Action(() =>
                 {
-                    Status = $"Выполнение операции! Найдено в {filesCount} из {allfilesCount}";
-                    Files.Add(file);
+                    checkedFiles++;
+                    Status = $"Выполнение операции! Проверено {checkedFiles} из {allfilesCount}";
+
                 }));
+            }
+            catch (OperationCanceledException e)
+            {
+                Status = e.Message;
+                IsEnabled = true;
+                throw e;
             }
         }
         #endregion
@@ -386,6 +409,32 @@ namespace FileParser.ViewModel
                     FilePath = fbd.SelectedPath;
                 }
             }
+        }
+        #endregion
+
+        #region Cancel
+        private ICommand cancelCommand;
+        public ICommand CancelCommand
+        {
+            get
+            {
+                if (cancelCommand == null)
+                {
+                    cancelCommand = new RelayCommand(new Action<object>(Cancel));
+                }
+                return cancelCommand;
+            }
+            set
+            {
+                cancelCommand = value;
+                RaisedPropertyChanged("CancelCommand");
+            }
+        }
+
+        private void Cancel(object obj)
+        {
+            if (cts != null)
+                cts.Cancel();
         }
         #endregion
     }

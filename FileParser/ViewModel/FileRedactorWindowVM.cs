@@ -50,7 +50,7 @@ namespace FileParser.ViewModel
             this.file = file;
             Title = file.FullName;
             //FileText = FilesParser.GetTextFromFile(file);
-           // Document = GenarateDocument();
+            //Document = GenarateDocument();
         }
 
         private FlowDocument GenarateDocument()

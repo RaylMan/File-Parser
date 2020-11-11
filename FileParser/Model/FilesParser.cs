@@ -95,34 +95,42 @@ namespace FileParser.Model
             }
             return Files;
         }
-    
-        public bool IsContaintText(FileInfo file, string text, bool IsUniqueText)
-        {
-            sem.Wait();
-            //using (new LogTimer(logger, $"IsContaintText {file.Name}"))
-            //{
-                using (StreamReader sr = file.OpenText())
-                {
-                    string line;
-                    while ((line = sr.ReadLine()) != null)
-                    {
-                        string[] bufer = line?.Split(' ');
-                        string query = null;
-                        if (IsUniqueText)
-                            query = bufer.FirstOrDefault(w => string.Equals(w, text, StringComparison.OrdinalIgnoreCase));
-                        else
-                            query = bufer.FirstOrDefault(w => w.Contains(text));
 
-                        if (query != null)
-                        {
+        public bool IsContaintText(FileInfo file, string text, bool IsUniqueText, CancellationToken token)
+        {
+            if (file.Length > 10000)
+                sem.Wait();
+
+            using (StreamReader sr = file.OpenText())
+            {
+                string line;
+                while ((line = sr.ReadLine()) != null)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        sr.Dispose();
+                        sem.Release();
+                        token.ThrowIfCancellationRequested();
+                    }
+
+                    string[] bufer = line?.Split(' ');
+                    string query = null;
+                    if (IsUniqueText)
+                        query = bufer.FirstOrDefault(w => string.Equals(w, text, StringComparison.OrdinalIgnoreCase));
+                    else
+                        query = bufer.FirstOrDefault(w => w.Contains(text));
+
+                    if (query != null)
+                    {
+                        if (file.Length > 10000)
                             sem.Release();
-                            return true;
-                        }
+                        return true;
                     }
                 }
+            }
+            if (file.Length > 10000)
                 sem.Release();
-                return false;
-            //}
+            return false;
         }
 
         public static string GetTextFromFile(FileInfo file)
